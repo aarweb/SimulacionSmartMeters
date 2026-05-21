@@ -1,0 +1,82 @@
+import time
+from concurrent.futures import ProcessPoolExecutor
+import numpy as np
+import random
+
+
+class ContadorIoT:
+    def __init__(self, id_contador):
+        self.id_contador = id_contador
+        self.offset = random.uniform(-0.75, 0.75)
+        self.intensidad = random.uniform(0.5, 1.5)
+        self.fuga = random.choice(
+            [0.0, 0.0, 0.0, 0.05]
+        )  # 25% probabilidad de tener fuga real
+
+    def simular_bloque_horas(self, hora_inicio, hora_fin, ticks_por_segundo=1):
+        """
+        Simula un tramo de tiempo y retorna los pulsos generados en formato IoT
+        """
+        eventos = []
+        picos = [[0.4, 8.0, 1.0], [0.2, 14.5, 1.2], [0.4, 21.0, 1.5]]
+
+        # Simulación de un bloque temporal discreto
+        for t in np.arange(hora_inicio, hora_fin, 1 / (3600 * ticks_por_segundo)):
+            hora_ajustada = (t + self.offset) % 24
+
+            # Evaluación del GMM
+            prob_gmm = 0
+            for w, mu, sigma in picos:
+                exponente = -0.5 * ((hora_ajustada - mu) / sigma) ** 2
+                prob_gmm += w * (1.0 / (sigma * np.sqrt(2 * np.pi))) * np.exp(exponente)
+
+            prob_final = (prob_gmm * self.intensidad) / (3600 * ticks_por_segundo)
+
+            # Sumamos la probabilidad de fuga (si la hay) por cada segunda
+            prob_final += self.fuga / (3600 * ticks_por_segundo)
+
+            if random.random() < prob_final:
+                eventos.append(
+                    {
+                        "timestamp": round(t, 4),
+                        "sensor_id": self.id_contador,
+                        "evento": "PULSO_1L",
+                    }
+                )
+
+        return eventos
+
+
+# Función de ejecución global que será mapeada a los procesos
+def ejecutar_simulacion_contador(id_num):
+    # Simula el consum de un contador entre las 07:00 y las 09:00 AM (Franja critica de la mañana)
+    contador = ContadorIoT(id_contador=f"CNT_{id_num:06d}")
+    return contador.simular_bloque_horas(7.0, 9.0, ticks_por_segundo=1)
+
+
+if __name__ == "__main__":
+    num_sensores = 5000  # Cantidad masiva de contadores a simular en paralelo
+    print(
+        f"Iniciando simulación paralela para {num_sensores} contadores inteligentes..."
+    )
+
+    inicio = time.time()
+    with ProcessPoolExecutor() as executor:
+        # Mapeamos los contadores a la funcion simuladora distribuyendolos en paralelo
+        resultados = executor.map(ejecutar_simulacion_contador, range(num_sensores))
+
+    fin_tiempo = time.time()
+
+    # Procesar resultados agregados
+    total_pulsos_generados = 0
+    for r in resultados:
+        total_pulsos_generados += len(r)
+
+    tiempo_empleado = fin_tiempo - inicio
+
+    print("\n--- RESULTADOS DE LA SIMULACIÓN CONCURRENTE ---")
+    print(f"Tiempo total de cómputo: {tiempo_empleado:.2f} segundos")
+    print(f"Pulsos de aga totales procesados: {total_pulsos_generados} eventos")
+    print(
+        f"Rendimiento de simulación: {int(total_pulsos_generados / tiempo_empleado)} eventos/segundo"
+    )
